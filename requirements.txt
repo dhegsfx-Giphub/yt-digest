@@ -1,0 +1,6 @@
+flask==3.0.3
+anthropic==0.28.0
+youtube-transcript-api==0.6.3
+google-api-python-client==2.134.0
+APScheduler==3.10.4
+pytz==2024.1

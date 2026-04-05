@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouTube Insights Digest</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f3f4f6;
+    color: #111827;
+    min-height: 100vh;
+  }
+  header {
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 0 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    height: 56px;
+  }
+  .logo { font-size: 16px; font-weight: 700; color: #111827; }
+  .logo span { color: #dc2626; }
+  nav { display: flex; gap: 0.25rem; margin-left: auto; }
+  nav button {
+    background: none; border: none; padding: 6px 12px; border-radius: 6px;
+    font-size: 13px; color: #6b7280; cursor: pointer;
+  }
+  nav button:hover, nav button.active { background: #f3f4f6; color: #111827; }
+
+  .main { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+
+  .card {
+    background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 10px; padding: 1.25rem 1.5rem; margin-bottom: 1rem;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; color: #6b7280;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 1rem;
+  }
+
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1rem; }
+  .stat { background: #f9fafb; border-radius: 8px; padding: 14px; }
+  .stat-num { font-size: 24px; font-weight: 700; color: #111827; }
+  .stat-label { font-size: 12px; color: #6b7280; margin-top: 2px; }
+
+  .schedule-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #ecfdf5; color: #065f46; border-radius: 6px;
+    padding: 6px 12px; font-size: 13px; font-weight: 500;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #10b981; }
+
+  .input-row { display: flex; gap: 8px; }
+  .input-row input {
+    flex: 1; padding: 8px 12px; border: 1px solid #d1d5db;
+    border-radius: 6px; font-size: 14px; outline: none;
+  }
+  .input-row input:focus { border-color: #6366f1; }
+
+  .btn {
+    padding: 8px 16px; border-radius: 6px; font-size: 13px;
+    font-weight: 500; border: 1px solid #d1d5db;
+    background: #fff; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { background: #f9fafb; }
+  .btn-primary { background: #111827; color: #fff; border-color: transparent; }
+  .btn-primary:hover { background: #1f2937; }
+  .btn-danger { color: #dc2626; border-color: #fca5a5; }
+  .btn-danger:hover { background: #fef2f2; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+  .channel-list { display: flex; flex-direction: column; gap: 8px; margin-top: 1rem; }
+  .channel-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; background: #f9fafb;
+    border-radius: 8px; border: 1px solid #e5e7eb;
+  }
+  .channel-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #e0e7ff; color: #4338ca; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .channel-name { font-size: 14px; font-weight: 500; flex: 1; }
+  .channel-id { font-size: 11px; color: #9ca3af; font-family: monospace; }
+
+  .digest-list { display: flex; flex-direction: column; gap: 8px; }
+  .digest-row {
+    display: flex; align-items: center; padding: 10px 12px;
+    background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;
+    text-decoration: none; color: inherit;
+  }
+  .digest-row:hover { background: #eff6ff; border-color: #bfdbfe; }
+  .digest-date { font-size: 14px; font-weight: 500; flex: 1; }
+  .digest-count {
+    font-size: 12px; background: #dbeafe; color: #1e40af;
+    border-radius: 12px; padding: 2px 8px;
+  }
+  .digest-arrow { color: #9ca3af; margin-left: 8px; font-size: 14px; }
+
+  .empty { text-align: center; padding: 2rem; color: #9ca3af; font-size: 14px; }
+
+  .notice {
+    background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;
+    padding: 10px 14px; font-size: 13px; color: #92400e; margin-bottom: 1rem;
+  }
+
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: #111827; color: #fff; padding: 10px 16px;
+    border-radius: 8px; font-size: 13px; display: none;
+    animation: slideUp 0.2s ease;
+    z-index: 999;
+  }
+  .toast.show { display: block; }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .tab { display: none; }
+  .tab.active { display: block; }
+
+  .run-btn-row { margin-top: 1rem; display: flex; align-items: center; gap: 10px; }
+  .run-note { font-size: 12px; color: #6b7280; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">YT <span>▶</span> Digest</div>
+  <nav>
+    <button class="active" onclick="showTab('dashboard', this)">Dashboard</button>
+    <button onclick="showTab('channels', this)">Channels</button>
+    <button onclick="showTab('history', this)">History</button>
+  </nav>
+</header>
+
+<div class="main">
+
+  <!-- DASHBOARD -->
+  <div id="tab-dashboard" class="tab active">
+    <div class="card">
+      <div class="card-title">Status</div>
+      <div class="stats-row">
+        <div class="stat"><div class="stat-num" id="stat-channels">—</div><div class="stat-label">Channels tracked</div></div>
+        <div class="stat"><div class="stat-num" id="stat-videos">—</div><div class="stat-label">Videos processed</div></div>
+        <div class="stat"><div class="stat-num" id="stat-digests">—</div><div class="stat-label">Digests sent</div></div>
+      </div>
+      <div class="schedule-badge">
+        <div class="dot"></div>
+        <span id="schedule-label">Loading schedule...</span>
+      </div>
+      <div style="font-size: 12px; color: #6b7280; margin-top: 8px;">
+        Next run: <span id="next-run">—</span>
+      </div>
+      <div class="run-btn-row">
+        <button class="btn btn-primary" onclick="runNow()">▶ Run digest now</button>
+        <span class="run-note">Useful for testing — processes all new videos immediately</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHANNELS -->
+  <div id="tab-channels" class="tab">
+    <div class="card">
+      <div class="card-title">Add a channel</div>
+      <div class="notice">
+        Paste a YouTube channel URL, @handle, or channel ID.<br>
+        Examples: <code>@mkbhd</code> &nbsp;·&nbsp; <code>https://youtube.com/@veritasium</code>
+      </div>
+      <div class="input-row">
+        <input type="text" id="channelInput" placeholder="@handle or channel URL" />
+        <button class="btn btn-primary" onclick="addChannel()">Add channel</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Tracked channels</div>
+      <div class="channel-list" id="channelList">
+        <div class="empty">No channels yet — add one above</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="tab-history" class="tab">
+    <div class="card">
+      <div class="card-title">Past digests</div>
+      <div class="digest-list" id="digestList">
+        <div class="empty">No digests yet</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function showTab(name, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'channels') loadChannels();
+  if (name === 'history') loadDigests();
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+async function loadStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    document.getElementById('stat-channels').textContent = d.channels;
+    document.getElementById('stat-videos').textContent = d.videos_processed;
+    document.getElementById('stat-digests').textContent = d.digests_sent;
+    document.getElementById('schedule-label').textContent = d.schedule;
+    const next = new Date(d.next_run);
+    document.getElementById('next-run').textContent = next.toLocaleString();
+  } catch(e) { console.error(e); }
+}
+
+async function loadChannels() {
+  const r = await fetch('/api/channels');
+  const channels = await r.json();
+  const list = document.getElementById('channelList');
+  if (!channels.length) {
+    list.innerHTML = '<div class="empty">No channels yet — add one above</div>';
+    return;
+  }
+  list.innerHTML = channels.map(c => `
+    <div class="channel-row">
+      <div class="channel-avatar">${c.name.charAt(0).toUpperCase()}</div>
+      <div style="flex:1">
+        <div class="channel-name">${c.name}</div>
+        <div class="channel-id">${c.channel_id}</div>
+      </div>
+      <button class="btn btn-sm btn-danger" onclick="removeChannel('${c.channel_id}', this)">Remove</button>
+    </div>
+  `).join('');
+}
+
+async function addChannel() {
+  const input = document.getElementById('channelInput');
+  const val = input.value.trim();
+  if (!val) return;
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = 'Adding...';
+  try {
+    const r = await fetch('/api/channels', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({channel: val})
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('Error: ' + d.error); return; }
+    toast(`Added: ${d.name}`);
+    input.value = '';
+    loadChannels();
+    loadStatus();
+  } catch(e) { toast('Request failed'); }
+  finally { btn.disabled = false; btn.textContent = 'Add channel'; }
+}
+
+async function removeChannel(id, btn) {
+  btn.disabled = true;
+  await fetch('/api/channels/' + id, {method: 'DELETE'});
+  toast('Channel removed');
+  loadChannels();
+  loadStatus();
+}
+
+async function loadDigests() {
+  const r = await fetch('/api/digests');
+  const digests = await r.json();
+  const list = document.getElementById('digestList');
+  if (!digests.length) {
+    list.innerHTML = '<div class="empty">No digests yet</div>';
+    return;
+  }
+  list.innerHTML = digests.map(d => `
+    <a class="digest-row" href="/api/digests/${d.id}" target="_blank">
+      <div class="digest-date">${new Date(d.created_at).toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'})}</div>
+      <div class="digest-count">${d.video_count} video${d.video_count !== 1 ? 's' : ''}</div>
+      <div class="digest-arrow">→</div>
+    </a>
+  `).join('');
+}
+
+async function runNow() {
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = 'Running...';
+  try {
+    await fetch('/api/run-now', {method: 'POST'});
+    toast('Digest job started — check back in a minute');
+    setTimeout(loadStatus, 5000);
+  } catch(e) { toast('Failed to start'); }
+  finally { setTimeout(() => { btn.disabled = false; btn.textContent = '▶ Run digest now'; }, 3000); }
+}
+
+loadStatus();
+setInterval(loadStatus, 30000);
+</script>
+</body>
+</html>
