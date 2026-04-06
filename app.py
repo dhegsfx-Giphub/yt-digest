@@ -71,7 +71,7 @@ init_db()
 
 def resolve_channel_id(raw: str) -> tuple[str, str]:
     """Accept channel URL, @handle, or bare ID. Returns (channel_id, name)."""
-    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY, cache_discovery=False)
 
     # Strip URL noise
     for prefix in ["https://www.youtube.com/", "https://youtube.com/", "http://www.youtube.com/"]:
@@ -103,7 +103,7 @@ def resolve_channel_id(raw: str) -> tuple[str, str]:
 
 
 def fetch_recent_videos(channel_id: str, days: int = 7) -> list[dict]:
-    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY, cache_discovery=False)
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     resp = youtube.search().list(
         part="snippet",
