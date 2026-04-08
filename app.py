@@ -24,6 +24,7 @@ app = Flask(__name__)
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY", "")
+YOUTUBE_COOKIES   = os.environ.get("YOUTUBE_COOKIES", "")
 YOUTUBE_API_KEY   = os.environ.get("YOUTUBE_API_KEY", "")
 SMTP_HOST         = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT         = int(os.environ.get("SMTP_PORT", "587"))
@@ -150,16 +151,25 @@ def fetch_transcript(video_id: str) -> str | None:
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             audio_path = os.path.join(tmpdir, "audio.mp3")
-            # Download audio using yt-dlp
-            result = subprocess.run([
+
+            # Write cookies to temp file if available
+            ydlp_cmd = [
                 "yt-dlp",
                 "--extract-audio",
                 "--audio-format", "mp3",
                 "--audio-quality", "5",
                 "--max-filesize", "25m",
                 "-o", audio_path,
-                f"https://www.youtube.com/watch?v={video_id}"
-            ], capture_output=True, text=True, timeout=120)
+            ]
+            if YOUTUBE_COOKIES:
+                cookies_path = os.path.join(tmpdir, "cookies.txt")
+                with open(cookies_path, "w") as cf:
+                    cf.write(YOUTUBE_COOKIES)
+                ydlp_cmd += ["--cookies", cookies_path]
+
+            ydlp_cmd.append(f"https://www.youtube.com/watch?v={video_id}")
+
+            result = subprocess.run(ydlp_cmd, capture_output=True, text=True, timeout=120)
 
             if result.returncode != 0:
                 log.warning(f"yt-dlp failed for {video_id}: {result.stderr}")
