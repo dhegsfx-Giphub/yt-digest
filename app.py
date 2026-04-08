@@ -31,7 +31,8 @@ SMTP_PASS         = os.environ.get("SMTP_PASS", "")
 DIGEST_EMAIL      = os.environ.get("DIGEST_EMAIL", "")
 DIGEST_DAY        = os.environ.get("DIGEST_DAY", "monday")   # day of week
 DIGEST_HOUR       = int(os.environ.get("DIGEST_HOUR", "8"))  # hour (UTC)
-DB_PATH           = os.environ.get("DB_PATH", "/data/digest.db" if os.path.isdir("/data") else "/tmp/digest.db")
+DB_PATH           = os.environ.get("DB_PATH", "/tmp/digest.db")
+DEFAULT_CHANNELS  = os.environ.get("DEFAULT_CHANNELS", "")
 
 # ---------------------------------------------------------------------------
 # Database
@@ -67,6 +68,25 @@ def init_db():
         """)
 
 init_db()
+
+# Auto-populate channels from DEFAULT_CHANNELS env var if DB is empty
+def seed_default_channels():
+    if not DEFAULT_CHANNELS:
+        return
+    db = get_db()
+    count = db.execute("SELECT COUNT(*) as n FROM channels").fetchone()["n"]
+    if count > 0:
+        return
+    handles = [h.strip() for h in DEFAULT_CHANNELS.split(",") if h.strip()]
+    log.info(f"Seeding {len(handles)} default channels...")
+    for handle in handles:
+        try:
+            cid, name = resolve_channel_id(handle)
+            db.execute("INSERT OR IGNORE INTO channels (channel_id, name) VALUES (?,?)", (cid, name))
+            db.commit()
+            log.info(f"  Seeded: {name}")
+        except Exception as e:
+            log.warning(f"  Could not seed {handle}: {e}")
 
 # ---------------------------------------------------------------------------
 # YouTube helpers
@@ -347,6 +367,7 @@ scheduler.add_job(
     replace_existing=True
 )
 scheduler.start()
+seed_default_channels()
 
 # ---------------------------------------------------------------------------
 # Web UI / API routes
