@@ -128,9 +128,8 @@ def fetch_recent_videos(channel_id: str, days: int = 7) -> list[dict]:
 
 def fetch_transcript(video_id: str) -> str | None:
     try:
-        api = YouTubeTranscriptApi()
-        transcript = api.fetch(video_id)
-        return " ".join(s.text for s in transcript)
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        return " ".join(s['text'] for s in transcript)
     except Exception as e:
         log.warning(f"No transcript for {video_id}: {e}")
         return None
@@ -395,4 +394,3 @@ def status():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
-
