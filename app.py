@@ -7,7 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import anthropic
 from youtube_transcript_api import YouTubeTranscriptApi
-from googleapiclient.discovery import build
+import requests as http_requests
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -28,7 +28,7 @@ SMTP_PASS         = os.environ.get("SMTP_PASS", "")
 DIGEST_EMAIL      = os.environ.get("DIGEST_EMAIL", "")
 DIGEST_DAY        = os.environ.get("DIGEST_DAY", "monday")   # day of week
 DIGEST_HOUR       = int(os.environ.get("DIGEST_HOUR", "8"))  # hour (UTC)
-DB_PATH           = os.environ.get("DB_PATH", "digest.db")
+DB_PATH           = os.environ.get("DB_PATH", "/tmp/digest.db")
 
 # ---------------------------------------------------------------------------
 # Database
@@ -69,58 +69,60 @@ init_db()
 # YouTube helpers
 # ---------------------------------------------------------------------------
 
+YT_API = "https://www.googleapis.com/youtube/v3"
+
+def yt_get(endpoint: str, params: dict) -> dict:
+    params["key"] = YOUTUBE_API_KEY
+    r = http_requests.get(f"{YT_API}/{endpoint}", params=params, timeout=10)
+    r.raise_for_status()
+    return r.json()
+
 def resolve_channel_id(raw: str) -> tuple[str, str]:
     """Accept channel URL, @handle, or bare ID. Returns (channel_id, name)."""
-    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY,cache_discovery=False)
-
-    # Strip URL noise
     for prefix in ["https://www.youtube.com/", "https://youtube.com/", "http://www.youtube.com/"]:
-        raw = raw.replace(prefix, "")
+        raw = raw.replace(prefix, "").strip("/")
 
-    if raw.startswith("@"):
-        handle = raw[1:]
-    elif raw.startswith("channel/"):
+    if raw.startswith("channel/"):
         cid = raw.replace("channel/", "").split("/")[0]
-        resp = youtube.channels().list(part="snippet", id=cid).execute()
-        items = resp.get("items", [])
+        data = yt_get("channels", {"part": "snippet", "id": cid})
+        items = data.get("items", [])
         if not items:
             raise ValueError(f"Channel not found: {cid}")
         return cid, items[0]["snippet"]["title"]
-    elif raw.startswith("@") is False and "/" not in raw and len(raw) == 24 and raw.startswith("UC"):
+
+    if not raw.startswith("@") and "/" not in raw and len(raw) >= 20 and raw.startswith("UC"):
         cid = raw
-        resp = youtube.channels().list(part="snippet", id=cid).execute()
-        items = resp.get("items", [])
+        data = yt_get("channels", {"part": "snippet", "id": cid})
+        items = data.get("items", [])
         name = items[0]["snippet"]["title"] if items else cid
         return cid, name
-    else:
-        handle = raw.lstrip("@").split("/")[0]
 
-    resp = youtube.channels().list(part="snippet", forHandle=handle).execute()
-    items = resp.get("items", [])
+    handle = raw.lstrip("@").split("/")[0]
+    data = yt_get("channels", {"part": "snippet", "forHandle": handle})
+    items = data.get("items", [])
     if not items:
         raise ValueError(f"Could not resolve channel: @{handle}")
     return items[0]["id"], items[0]["snippet"]["title"]
 
 
 def fetch_recent_videos(channel_id: str, days: int = 7) -> list[dict]:
-    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY,cache_discovery=False)
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    resp = youtube.search().list(
-        part="snippet",
-        channelId=channel_id,
-        publishedAfter=published_after,
-        type="video",
-        maxResults=10,
-        order="date"
-    ).execute()
+    data = yt_get("search", {
+        "part": "snippet",
+        "channelId": channel_id,
+        "publishedAfter": published_after,
+        "type": "video",
+        "maxResults": 10,
+        "order": "date"
+    })
     return [
         {
-            "video_id":  item["id"]["videoId"],
-            "title":     item["snippet"]["title"],
-            "published": item["snippet"]["publishedAt"],
+            "video_id":   item["id"]["videoId"],
+            "title":      item["snippet"]["title"],
+            "published":  item["snippet"]["publishedAt"],
             "channel_id": channel_id,
         }
-        for item in resp.get("items", [])
+        for item in data.get("items", [])
     ]
 
 
@@ -393,3 +395,4 @@ def status():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+
