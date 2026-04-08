@@ -6,6 +6,9 @@ from flask import Flask, request, jsonify, render_template
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import anthropic
+import openai
+import tempfile
+import subprocess
 from youtube_transcript_api import YouTubeTranscriptApi
 import requests as http_requests
 import smtplib
@@ -20,6 +23,7 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY", "")
 YOUTUBE_API_KEY   = os.environ.get("YOUTUBE_API_KEY", "")
 SMTP_HOST         = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT         = int(os.environ.get("SMTP_PORT", "587"))
@@ -127,11 +131,62 @@ def fetch_recent_videos(channel_id: str, days: int = 7) -> list[dict]:
 
 
 def fetch_transcript(video_id: str) -> str | None:
+    # First try YouTube's built-in captions (free, fast)
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        return " ".join(s['text'] for s in transcript)
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
+        data = transcript.fetch()
+        text = " ".join(s['text'] for s in data)
+        if text.strip():
+            return text
+    except Exception:
+        pass
+
+    # Fall back to Whisper transcription via OpenAI
+    if not OPENAI_API_KEY:
+        log.warning(f"No transcript for {video_id} and no OPENAI_API_KEY set")
+        return None
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio_path = os.path.join(tmpdir, "audio.mp3")
+            # Download audio using yt-dlp
+            result = subprocess.run([
+                "yt-dlp",
+                "--extract-audio",
+                "--audio-format", "mp3",
+                "--audio-quality", "5",
+                "--max-filesize", "25m",
+                "-o", audio_path,
+                f"https://www.youtube.com/watch?v={video_id}"
+            ], capture_output=True, text=True, timeout=120)
+
+            if result.returncode != 0:
+                log.warning(f"yt-dlp failed for {video_id}: {result.stderr}")
+                return None
+
+            if not os.path.exists(audio_path):
+                # yt-dlp may add extension
+                import glob
+                files = glob.glob(os.path.join(tmpdir, "audio.*"))
+                if not files:
+                    log.warning(f"No audio file found for {video_id}")
+                    return None
+                audio_path = files[0]
+
+            # Transcribe with Whisper
+            client = openai.OpenAI(api_key=OPENAI_API_KEY)
+            with open(audio_path, "rb") as f:
+                response = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=f,
+                    response_format="text"
+                )
+            log.info(f"Whisper transcribed {video_id} successfully")
+            return response
+
     except Exception as e:
-        log.warning(f"No transcript for {video_id}: {e}")
+        log.warning(f"Whisper transcription failed for {video_id}: {e}")
         return None
 
 # ---------------------------------------------------------------------------
