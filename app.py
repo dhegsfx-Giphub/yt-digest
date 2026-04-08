@@ -1,4 +1,4 @@
-import os
+mport os
 import json
 import logging
 from datetime import datetime, timedelta
@@ -13,12 +13,12 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import sqlite3
 import pytz
-
+ 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
-
+ 
 app = Flask(__name__)
-
+ 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY", "")
 SUPADATA_API_KEY  = os.environ.get("SUPADATA_API_KEY", "")
@@ -33,16 +33,16 @@ DIGEST_DAY        = os.environ.get("DIGEST_DAY", "monday")   # day of week
 DIGEST_HOUR       = int(os.environ.get("DIGEST_HOUR", "8"))  # hour (UTC)
 DB_PATH           = os.environ.get("DB_PATH", "/tmp/digest.db")
 DEFAULT_CHANNELS  = os.environ.get("DEFAULT_CHANNELS", "")
-
+ 
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
-
+ 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
-
+ 
 def init_db():
     with get_db() as db:
         db.executescript("""
@@ -66,9 +66,9 @@ def init_db():
                 html        TEXT
             );
         """)
-
+ 
 init_db()
-
+ 
 # Auto-populate channels from DEFAULT_CHANNELS env var if DB is empty
 def seed_default_channels():
     if not DEFAULT_CHANNELS:
@@ -87,24 +87,24 @@ def seed_default_channels():
             log.info(f"  Seeded: {name}")
         except Exception as e:
             log.warning(f"  Could not seed {handle}: {e}")
-
+ 
 # ---------------------------------------------------------------------------
 # YouTube helpers
 # ---------------------------------------------------------------------------
-
+ 
 YT_API = "https://www.googleapis.com/youtube/v3"
-
+ 
 def yt_get(endpoint: str, params: dict) -> dict:
     params["key"] = YOUTUBE_API_KEY
     r = http_requests.get(f"{YT_API}/{endpoint}", params=params, timeout=10)
     r.raise_for_status()
     return r.json()
-
+ 
 def resolve_channel_id(raw: str) -> tuple[str, str]:
     """Accept channel URL, @handle, or bare ID. Returns (channel_id, name)."""
     for prefix in ["https://www.youtube.com/", "https://youtube.com/", "http://www.youtube.com/"]:
         raw = raw.replace(prefix, "").strip("/")
-
+ 
     if raw.startswith("channel/"):
         cid = raw.replace("channel/", "").split("/")[0]
         data = yt_get("channels", {"part": "snippet", "id": cid})
@@ -112,22 +112,22 @@ def resolve_channel_id(raw: str) -> tuple[str, str]:
         if not items:
             raise ValueError(f"Channel not found: {cid}")
         return cid, items[0]["snippet"]["title"]
-
+ 
     if not raw.startswith("@") and "/" not in raw and len(raw) >= 20 and raw.startswith("UC"):
         cid = raw
         data = yt_get("channels", {"part": "snippet", "id": cid})
         items = data.get("items", [])
         name = items[0]["snippet"]["title"] if items else cid
         return cid, name
-
+ 
     handle = raw.lstrip("@").split("/")[0]
     data = yt_get("channels", {"part": "snippet", "forHandle": handle})
     items = data.get("items", [])
     if not items:
         raise ValueError(f"Could not resolve channel: @{handle}")
     return items[0]["id"], items[0]["snippet"]["title"]
-
-
+ 
+ 
 def fetch_recent_videos(channel_id: str, days: int = 7) -> list[dict]:
     published_after = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     data = yt_get("search", {
@@ -147,8 +147,8 @@ def fetch_recent_videos(channel_id: str, days: int = 7) -> list[dict]:
         }
         for item in data.get("items", [])
     ]
-
-
+ 
+ 
 def fetch_transcript(video_id: str) -> str | None:
     # First try YouTube's built-in captions (free, fast)
     try:
@@ -161,12 +161,12 @@ def fetch_transcript(video_id: str) -> str | None:
             return text
     except Exception:
         pass
-
+ 
     # Fall back to Supadata transcript API
     if not SUPADATA_API_KEY:
         log.warning(f"No transcript for {video_id} and no SUPADATA_API_KEY set")
         return None
-
+ 
     try:
         resp = http_requests.get(
             "https://api.supadata.ai/v1/youtube/transcript",
@@ -185,20 +185,20 @@ def fetch_transcript(video_id: str) -> str | None:
     except Exception as e:
         log.warning(f"Supadata failed for {video_id}: {e}")
         return None
-
+ 
 # ---------------------------------------------------------------------------
 # Claude analysis
 # ---------------------------------------------------------------------------
-
+ 
 def analyse_video(title: str, transcript: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     prompt = f"""You are extracting actionable insights from a YouTube video transcript.
-
+ 
 Video title: "{title}"
-
+ 
 Transcript:
 {transcript[:14000]}
-
+ 
 Return JSON only (no markdown, no backticks):
 {{
   "summary": "2-3 sentence summary of what this video is actually about",
@@ -210,9 +210,9 @@ Return JSON only (no markdown, no backticks):
     "Another specific action"
   ]
 }}
-
+ 
 Actions must be concrete and specific to this video's content — not generic advice."""
-
+ 
     msg = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=1000,
@@ -220,11 +220,11 @@ Actions must be concrete and specific to this video's content — not generic ad
     )
     text = msg.content[0].text.replace("```json", "").replace("```", "").strip()
     return json.loads(text)
-
+ 
 # ---------------------------------------------------------------------------
 # Digest builder
 # ---------------------------------------------------------------------------
-
+ 
 def build_digest_html(results: list[dict]) -> str:
     rows = ""
     for r in results:
@@ -258,7 +258,7 @@ def build_digest_html(results: list[dict]) -> str:
             <ul style="list-style:none;padding:0;margin:0;">{actions_html}</ul>
           </div>
         </div>"""
-
+ 
     date_str = datetime.utcnow().strftime("%d %B %Y")
     return f"""
 <!DOCTYPE html><html><head><meta charset="UTF-8"></head>
@@ -274,11 +274,11 @@ def build_digest_html(results: list[dict]) -> str:
     </div>
   </div>
 </body></html>"""
-
+ 
 # ---------------------------------------------------------------------------
 # Email sender
 # ---------------------------------------------------------------------------
-
+ 
 def send_digest_email(html: str, video_count: int):
     if not all([SMTP_USER, SMTP_PASS, DIGEST_EMAIL]):
         log.warning("Email not configured — skipping send.")
@@ -293,11 +293,11 @@ def send_digest_email(html: str, video_count: int):
         server.login(SMTP_USER, SMTP_PASS)
         server.sendmail(SMTP_USER, DIGEST_EMAIL, msg.as_string())
     log.info(f"Digest sent to {DIGEST_EMAIL}")
-
+ 
 # ---------------------------------------------------------------------------
 # The main weekly job
 # ---------------------------------------------------------------------------
-
+ 
 def run_weekly_digest():
     log.info("Running weekly digest...")
     db = get_db()
@@ -305,7 +305,7 @@ def run_weekly_digest():
     if not channels:
         log.info("No channels configured.")
         return
-
+ 
     results = []
     for ch in channels:
         try:
@@ -322,12 +322,12 @@ def run_weekly_digest():
                     (v["video_id"], v["channel_id"], v["title"], v["published"])
                 )
                 db.commit()
-
+ 
                 transcript = fetch_transcript(v["video_id"])
                 if not transcript:
                     log.info(f"  Skipping {v['video_id']} (no transcript)")
                     continue
-
+ 
                 analysis = analyse_video(v["title"], transcript)
                 results.append({
                     "video_id":    v["video_id"],
@@ -339,26 +339,26 @@ def run_weekly_digest():
                 db.commit()
         except Exception as e:
             log.error(f"Error processing channel {ch['channel_id']}: {e}")
-
+ 
     if not results:
         log.info("No new videos with transcripts this week.")
         return
-
+ 
     html = build_digest_html(results)
     db.execute("INSERT INTO digests (video_count, html) VALUES (?,?)", (len(results), html))
     db.commit()
     send_digest_email(html, len(results))
     log.info(f"Digest complete: {len(results)} videos processed.")
-
+ 
 # ---------------------------------------------------------------------------
 # Scheduler
 # ---------------------------------------------------------------------------
-
+ 
 DAY_MAP = {
     "monday": "mon", "tuesday": "tue", "wednesday": "wed",
     "thursday": "thu", "friday": "fri", "saturday": "sat", "sunday": "sun"
 }
-
+ 
 scheduler = BackgroundScheduler(timezone=pytz.utc)
 scheduler.add_job(
     run_weekly_digest,
@@ -368,21 +368,21 @@ scheduler.add_job(
 )
 scheduler.start()
 seed_default_channels()
-
+ 
 # ---------------------------------------------------------------------------
 # Web UI / API routes
 # ---------------------------------------------------------------------------
-
+ 
 @app.route("/")
 def index():
     return render_template("index.html")
-
+ 
 @app.route("/api/channels", methods=["GET"])
 def list_channels():
     db = get_db()
     rows = db.execute("SELECT * FROM channels ORDER BY added_at DESC").fetchall()
     return jsonify([dict(r) for r in rows])
-
+ 
 @app.route("/api/channels", methods=["POST"])
 def add_channel():
     data = request.json
@@ -399,13 +399,13 @@ def add_channel():
         return jsonify({"channel_id": cid, "name": name})
     except sqlite3.IntegrityError:
         return jsonify({"error": "Channel already added"}), 409
-
+ 
 @app.route("/api/channels/<channel_id>", methods=["DELETE"])
 def remove_channel(channel_id):
     with get_db() as db:
         db.execute("DELETE FROM channels WHERE channel_id=?", (channel_id,))
     return jsonify({"ok": True})
-
+ 
 @app.route("/api/digests", methods=["GET"])
 def list_digests():
     db = get_db()
@@ -413,7 +413,7 @@ def list_digests():
         "SELECT id, created_at, video_count FROM digests ORDER BY created_at DESC LIMIT 20"
     ).fetchall()
     return jsonify([dict(r) for r in rows])
-
+ 
 @app.route("/api/digests/<int:digest_id>", methods=["GET"])
 def get_digest(digest_id):
     db = get_db()
@@ -422,14 +422,14 @@ def get_digest(digest_id):
         return jsonify({"error": "Not found"}), 404
     from flask import Response
     return Response(row["html"], mimetype="text/html")
-
+ 
 @app.route("/api/run-now", methods=["POST"])
 def run_now():
     """Manually trigger the digest (useful for testing)."""
     import threading
     threading.Thread(target=run_weekly_digest, daemon=True).start()
     return jsonify({"ok": True, "message": "Digest job started in background"})
-
+ 
 @app.route("/api/status", methods=["GET"])
 def status():
     db = get_db()
@@ -444,6 +444,7 @@ def status():
         "next_run":        str(next_run),
         "schedule":        f"Every {DIGEST_DAY} at {DIGEST_HOUR:02d}:00 UTC",
     })
-
+ 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+ 
