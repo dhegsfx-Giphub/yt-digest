@@ -29,6 +29,11 @@
     font-size: 13px; color: #6b7280; cursor: pointer;
   }
   nav button:hover, nav button.active { background: #f3f4f6; color: #111827; }
+  .green { color: #059669; font-weight: 600; }
+  .red { color: #dc2626; font-weight: 600; }
+  .trade-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 8px; font-size: 13px; }
+  .trade-ticker { font-weight: 700; width: 60px; }
+  .trade-detail { color: #6b7280; flex: 1; }
 
   .main { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
 
@@ -133,6 +138,7 @@
     <button class="active" onclick="showTab('dashboard', this)">Dashboard</button>
     <button onclick="showTab('channels', this)">Channels</button>
     <button onclick="showTab('history', this)">History</button>
+    <button onclick="showTab('trading', this)">📈 Trading</button>
   </nav>
 </header>
 
@@ -182,7 +188,31 @@
     </div>
   </div>
 
-  <!-- HISTORY -->
+  <!-- TRADING -->
+  <div id="tab-trading" class="tab">
+    <div class="card">
+      <div class="card-title">Paper Trading — IBKR</div>
+      <div class="stats-row" id="trade-stats">
+        <div class="stat"><div class="stat-num" id="stat-open">—</div><div class="stat-label">Open positions</div></div>
+        <div class="stat"><div class="stat-num" id="stat-pnl">—</div><div class="stat-label">Closed P&L ($)</div></div>
+        <div class="stat"><div class="stat-num" id="stat-winrate">—</div><div class="stat-label">Win rate</div></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn btn-primary" onclick="runScan()">🔍 Run scan now</button>
+        <span style="font-size:12px;color:#6b7280;align-self:center;">Scans S&P 500 against your criteria</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Open positions</div>
+      <div id="open-trades"><div class="empty">No open positions</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Recent closed trades</div>
+      <div id="closed-trades"><div class="empty">No closed trades yet</div></div>
+    </div>
+  </div>
   <div id="tab-history" class="tab">
     <div class="card">
       <div class="card-title">Past digests</div>
@@ -204,6 +234,7 @@ function showTab(name, btn) {
   btn.classList.add('active');
   if (name === 'channels') loadChannels();
   if (name === 'history') loadDigests();
+  if (name === 'trading') loadTrading();
 }
 
 function toast(msg) {
@@ -302,6 +333,54 @@ async function runNow() {
     setTimeout(loadStatus, 5000);
   } catch(e) { toast('Failed to start'); }
   finally { setTimeout(() => { btn.disabled = false; btn.textContent = '▶ Run digest now'; }, 3000); }
+}
+
+async function loadTrading() {
+  const r = await fetch('/api/trader/trades');
+  const d = await r.json();
+  document.getElementById('stat-open').textContent = d.open_trades.length;
+  const pnl = d.total_pnl;
+  const pnlEl = document.getElementById('stat-pnl');
+  pnlEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+  pnlEl.className = 'stat-num ' + (pnl >= 0 ? 'green' : 'red');
+  document.getElementById('stat-winrate').textContent = d.win_rate + '%';
+
+  const openDiv = document.getElementById('open-trades');
+  if (!d.open_trades.length) {
+    openDiv.innerHTML = '<div class="empty">No open positions</div>';
+  } else {
+    openDiv.innerHTML = d.open_trades.map(t => {
+      const pct = t.trail_active ? '🔄 Trailing' : '🛡️ Hard stop';
+      return `<div class="trade-row">
+        <div class="trade-ticker">${t.ticker}</div>
+        <div class="trade-detail">Entry: $${t.entry_price.toFixed(2)} · Qty: ${t.qty} · Stop: $${t.stop_price.toFixed(2)} · ${pct}</div>
+        <div>${t.opened_at.split('T')[0]}</div>
+      </div>`;
+    }).join('');
+  }
+
+  const closedDiv = document.getElementById('closed-trades');
+  if (!d.closed_trades.length) {
+    closedDiv.innerHTML = '<div class="empty">No closed trades yet</div>';
+  } else {
+    closedDiv.innerHTML = d.closed_trades.map(t => {
+      const pnl = t.pnl || 0;
+      const cls = pnl >= 0 ? 'green' : 'red';
+      return `<div class="trade-row">
+        <div class="trade-ticker">${t.ticker}</div>
+        <div class="trade-detail">Entry: $${t.entry_price.toFixed(2)} → Exit: $${(t.close_price||0).toFixed(2)} · Qty: ${t.qty}</div>
+        <div class="${cls}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+async function runScan() {
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '🔍 Scanning...';
+  await fetch('/api/trader/scan', {method:'POST'});
+  toast('Scan started — check back in a few minutes');
+  setTimeout(() => { btn.disabled=false; btn.textContent='🔍 Run scan now'; loadTrading(); }, 5000);
 }
 
 loadStatus();
