@@ -369,6 +369,16 @@ scheduler.add_job(
 scheduler.start()
 seed_default_channels()
 
+# Daily trading scan at 9:45am ET (2:45pm UTC)
+from trader import run_daily_scan, init_trade_tables
+init_trade_tables()
+scheduler.add_job(
+    run_daily_scan,
+    CronTrigger(day_of_week="mon-fri", hour=14, minute=45, timezone=pytz.utc),
+    id="daily_scan",
+    replace_existing=True
+)
+
 # ---------------------------------------------------------------------------
 # Web UI / API routes
 # ---------------------------------------------------------------------------
@@ -444,6 +454,28 @@ def status():
         "next_run":        str(next_run),
         "schedule":        f"Every {DIGEST_DAY} at {DIGEST_HOUR:02d}:00 UTC",
     })
+
+# ---------------------------------------------------------------------------
+# Trading routes
+# ---------------------------------------------------------------------------
+
+@app.route("/api/trader/status", methods=["GET"])
+def trader_status():
+    from trader import get_trade_summary
+    return jsonify(get_trade_summary())
+
+@app.route("/api/trader/scan", methods=["POST"])
+def trader_scan():
+    import threading
+    from trader import run_daily_scan
+    threading.Thread(target=run_daily_scan, daemon=True).start()
+    return jsonify({"ok": True, "message": "Scan started in background"})
+
+@app.route("/api/trader/trades", methods=["GET"])
+def trader_trades():
+    from trader import get_trade_summary
+    summary = get_trade_summary()
+    return jsonify(summary)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
